@@ -13,9 +13,19 @@ const EN := {
 	"Слив": "Drain",
 	"t = %.0f с   скорость x%s%s": "t = %.0f s   speed x%s%s",
 	"   [пауза]": "   [paused]",
-	"Бак: %.0f см   слив: %.0f см   τ = %.1f с": "Tank: %.0f cm   drain: %.0f cm   τ = %.1f s",
-	"↑↓ бак   Пробел пауза   +/− скорость   R сброс   S сохранить CSV   L язык":
-		"↑↓ tank   Space pause   +/− speed   R reset   S save CSV   L language",
+	"Бак: %.0f см   слив: %.0f см   τ = %.1f с   приток: %.2f см/мин":
+		"Tank: %.0f cm   drain: %.0f cm   τ = %.1f s   inflow: %.2f cm/min",
+	"↑↓ бак   Пробел пауза   +/− скорость   [ ] приток   R сброс   S CSV   L язык":
+		"↑↓ tank   Space pause   +/− speed   [ ] inflow   R reset   S CSV   L language",
+	# Приток (тепло твердения)
+	"− приток": "− inflow",
+	"+ приток": "+ inflow",
+	"приток %.1f мл/мин = %.0f кап/мин на шприц": "inflow %.1f ml/min = %.0f drops/min per syringe",
+	"8  Капельница-приток — %d": "8  Inflow drip set — %d",
+	"#Приток (тепло)": "#Inflow (heat)",
+	"%.1f мл/мин = %.0f кап/мин": "%.1f ml/min = %.0f drops/min",
+	"затухание T = %.0f мин": "decay T = %.0f min",
+	"постоянный": "constant",
 	# syringe_rig.gd — схема
 	"слив %.1f см": "drain %.1f cm",
 	"бак %.1f см": "tank %.1f cm",
@@ -42,8 +52,8 @@ const EN := {
 	# Подвал
 	"Мышь: тяните бак, конец слива и уровни в шприцах; колесо — ±0,1 см. Пауза → расставьте уровни → Пуск.":
 		"Mouse: drag the tank, the drain end and syringe levels; wheel = ±0.1 cm. Pause → set levels → Run.",
-	"Клавиши: ↑↓ бак, Пробел, +/−, R, S, L язык, F1.   Уровни — от нуля шкал; 1 см = %.1f мл.":
-		"Keys: ↑↓ tank, Space, +/−, R, S, L language, F1.   Levels from scale zero; 1 cm = %.1f ml.",
+	"Клавиши: ↑↓ бак, [ ] приток, Пробел, +/−, R, S, L, F1.   Уровни — от нуля шкал; 1 см = %.1f мл.":
+		"Keys: ↑↓ tank, [ ] inflow, Space, +/−, R, S, L, F1.   Levels from scale zero; 1 cm = %.1f ml.",
 	"F1 — инструкция: сборка, калибровка, расчёты": "F1 — manual: assembly, calibration, calculations",
 	# Панель справа
 	"#Детали (N = %d)": "#Parts (N = %d)",

@@ -13,6 +13,8 @@ extends LukyanovIntegrator
 @export var tube_inner_d_mm: float = 3.0
 ## Длина трубки между соседними шприцами.
 @export var tube_length_cm: float = 30.0
+## Капель в 1 мл у капельницы притока (стандартная система — 20).
+@export var drops_per_ml: float = 20.0
 
 # Экран 1920×1080. U — масштаб размеров деталей относительно макета 1280×800.
 const U := 1.35
@@ -50,6 +52,9 @@ const COLOR_BTN := Color(0.24, 0.26, 0.3)
 const COLOR_BTN_HOVER := Color(0.34, 0.37, 0.43)
 const COLOR_HOVER := Color(1.0, 0.85, 0.35, 0.9)
 const WHEEL_STEP_CM := 0.1
+const INFLOW_STEP_ML := 0.5
+# Линия притока над шприцами: капельница над каждым шприцем.
+const FEED_Y := 232.0
 const CSV_PATH := "user://lukyanov_levels.csv"
 
 var _help_open := false
@@ -162,6 +167,8 @@ func _draw() -> void:
 		draw_string(font, Vector2(lx, LINE_Y + 96), I18n.t("%.1f см") % levels[i], HORIZONTAL_ALIGNMENT_CENTER, slot, FS_BIG, COLOR_TEXT)
 		draw_string(font, Vector2(lx, LINE_Y + 128), I18n.t("%.0f мл") % (levels[i] * area), HORIZONTAL_ALIGNMENT_CENTER, slot, FS, COLOR_DIM)
 
+	_draw_inflow(cock_xs, sw, font)
+
 	# Профиль «температуры»
 	var pts: Array[Vector2] = [Vector2(tank_cx, _sy(tank_level_cm))]
 	for i in n:
@@ -212,6 +219,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 		elif key != null and key.pressed and key.keycode == KEY_S and not key.echo:
 			_save_csv_with_toast()
+		elif key != null and key.pressed and key.keycode in [KEY_BRACKETLEFT, KEY_BRACKETRIGHT]:
+			_change_inflow(-1 if key.keycode == KEY_BRACKETLEFT else 1)
 		else:
 			super._unhandled_input(event)
 			return
@@ -416,6 +425,8 @@ func _buttons() -> Array[Dictionary]:
 		["slower", I18n.t("− скорость")],
 		["faster", I18n.t("+ скорость")],
 		["reset", I18n.t("Сброс")],
+		["in_less", I18n.t("− приток")],
+		["in_more", I18n.t("+ приток")],
 		["csv", I18n.t("Сохранить CSV")],
 		["help", I18n.t("Инструкция")],
 		# Кнопка показывает язык, на который переключит.
@@ -424,9 +435,9 @@ func _buttons() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var x := 24.0
 	for d in defs:
-		var w := font.get_string_size(d[1], HORIZONTAL_ALIGNMENT_LEFT, -1, FS).x + 32.0
+		var w := font.get_string_size(d[1], HORIZONTAL_ALIGNMENT_LEFT, -1, FS).x + 22.0
 		out.append({"id": d[0], "text": d[1], "rect": Rect2(x, 62.0, w, 44.0)})
-		x += w + 10.0
+		x += w + 8.0
 	return out
 
 
@@ -450,12 +461,53 @@ func _press_button(id: String) -> void:
 			sim_speed = minf(sim_speed * 2.0, 256.0)
 		"reset":
 			_reset()
+		"in_less":
+			_change_inflow(-1)
+		"in_more":
+			_change_inflow(1)
 		"csv":
 			_save_csv_with_toast()
 		"help":
 			_set_help(true)
 		"lang":
 			I18n.toggle()
+
+
+# --- Приток (тепло твердения) ------------------------------------------
+# Настройка — в мл/мин на шприц; в модели — см/мин (делим на площадь сечения).
+
+func _inflow_ml_per_min_now() -> float:
+	return _inflow_cm_per_s(sim_time) * 60.0 * _area_cm2()
+
+
+func _change_inflow(dir: int) -> void:
+	var ml := maxf(snappedf(inflow_cm_per_min * _area_cm2() + dir * INFLOW_STEP_ML, INFLOW_STEP_ML), 0.0)
+	inflow_cm_per_min = ml / _area_cm2()
+
+
+## Капельница над каждым шприцем; капли падают с частотой реальной капельницы.
+func _draw_inflow(cock_xs: Array[float], sw: float, font: Font) -> void:
+	var ml := _inflow_ml_per_min_now()
+	if ml <= 0.0:
+		return
+	var dpm := ml * drops_per_ml
+	var x0 := cock_xs[0] - sw * 0.5 - 30.0
+	var x1 := cock_xs[cock_xs.size() - 1] + sw * 0.5 + 30.0
+	draw_line(Vector2(x0, FEED_Y), Vector2(x1, FEED_Y), COLOR_TUBE, 8.0 * U)
+	draw_line(Vector2(x0, FEED_Y), Vector2(x1, FEED_Y), COLOR_WATER, 3.0 * U)
+	draw_string(font, Vector2(x0, FEED_Y - 18), I18n.t("приток %.1f мл/мин = %.0f кап/мин на шприц") % [ml, dpm],
+			HORIZONTAL_ALIGNMENT_LEFT, -1, FS_SMALL, COLOR_TEXT)
+	var tip := FEED_Y + 34.0
+	# Период капель; чаще ~7 капель/с глаз не различает, дальше не ускоряем.
+	var period := maxf(60.0 / dpm, 0.15)
+	var phase := fmod(Time.get_ticks_msec() / 1000.0, period) / period
+	for i in cock_xs.size():
+		var cx := cock_xs[i]
+		draw_line(Vector2(cx, FEED_Y), Vector2(cx, tip), COLOR_PLASTIC, 3.0)
+		draw_rect(Rect2(cx - 5 * U, FEED_Y + 6, 10 * U, 16 * U), COLOR_CLAMP)
+		var bottom := _sy(levels[i])
+		var y := tip + 4.0 + (bottom - tip - 4.0) * (phase if not paused else 0.0)
+		draw_circle(Vector2(cx, y), 4.0 * U, COLOR_WATER)
 
 
 func _save_csv_with_toast() -> void:
@@ -596,7 +648,7 @@ func _draw_lines(font: Font, x: float, y: float, lines: PackedStringArray, step:
 func _draw_footer(font: Font) -> void:
 	var lines := PackedStringArray([
 		I18n.t("Мышь: тяните бак, конец слива и уровни в шприцах; колесо — ±0,1 см. Пауза → расставьте уровни → Пуск."),
-		I18n.t("Клавиши: ↑↓ бак, Пробел, +/−, R, S, L язык, F1.   Уровни — от нуля шкал; 1 см = %.1f мл.") % _area_cm2(),
+		I18n.t("Клавиши: ↑↓ бак, [ ] приток, Пробел, +/−, R, S, L, F1.   Уровни — от нуля шкал; 1 см = %.1f мл.") % _area_cm2(),
 	])
 	_draw_lines(font, 24, 935, lines, 38)
 	draw_string(font, Vector2(24, 1040), I18n.t("F1 — инструкция: сборка, калибровка, расчёты"), HORIZONTAL_ALIGNMENT_LEFT, -1, FS_BIG, COLOR_HEAD)
@@ -626,5 +678,11 @@ func _draw_panel(font: Font) -> void:
 		I18n.t("Открытая трубка:"),
 		I18n.t("  t½ ≈ %.1f с") % _open_line_half_time_s(),
 		I18n.t("Зажимом → %.0f с") % pair_half_time_s,
+		"",
+		I18n.t("#Приток (тепло)"),
+		I18n.t("%.1f мл/мин = %.0f кап/мин") % [_inflow_ml_per_min_now(), _inflow_ml_per_min_now() * drops_per_ml],
+		I18n.t("затухание T = %.0f мин") % inflow_decay_min if inflow_decay_min > 0.0 else I18n.t("постоянный"),
 	])
+	if inflow_cm_per_min > 0.0:
+		lines.insert(8, I18n.t("8  Капельница-приток — %d") % n)
 	_draw_lines(font, PANEL_X, 50, lines, 38)

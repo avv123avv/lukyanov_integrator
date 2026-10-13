@@ -98,15 +98,18 @@ def steps(items: list[str]) -> list[Paragraph]:
 
 # --- Модель для задач справки (тот же явный Эйлер, что в программе) --------
 
-def simulate(h0: list[float], tank: float, drain: float, t_end: float) -> list[tuple[float, list[float]]]:
+def simulate(h0: list[float], tank: float, drain: float, t_end: float,
+			 q0_cm_s: float = 0.0, decay_s: float = 0.0) -> list[tuple[float, list[float]]]:
+	"""Приток q(t) = q0 · exp(−t / decay) в каждый шприц; decay = 0 — постоянный."""
 	h = list(h0)
 	n = len(h)
 	dt = TAU / 50
 	t = 0.0
 	hist = [(t, h[:])]
 	while t < t_end:
+		q = q0_cm_s * (math.exp(-t / decay_s) if decay_s > 0 else 1.0)
 		h = [min(max(h[i] + dt / TAU * ((tank if i == 0 else h[i - 1]) - 2 * h[i]
-										+ (drain if i == n - 1 else h[i + 1])), 0.0), SCALE_CM)
+										+ (drain if i == n - 1 else h[i + 1])) + dt * q, 0.0), SCALE_CM)
 			 for i in range(n)]
 		t += dt
 		hist.append((t, h[:]))
@@ -353,7 +356,135 @@ def history_cases() -> list:
 			  "first forms around hot steel, and cooling is slower for the first minutes."),
 		],
 	)
+	s += hydration_case()
 	return s
+
+
+def hydration_run(thickness_m: float) -> dict:
+	"""Массив бетона с теплом твердения: приток в каждый шприц, затухающий как тепловыделение."""
+	c = Case(thickness_m, 7e-7, 10, 70)
+	rise_cm = c.lvl(10 + HYDRATION_RISE_C)            # адиабатический подъём в см уровня
+	decay_rig = HYDRATION_T_DAYS * 86400 / c.m       # затухание в секундах установки
+	q0 = rise_cm / decay_rig                          # ∫q dt = подъём
+	hist = simulate([0.0] * N, 0.0, 0.0, 8 * decay_rig, q0, decay_rig)
+	t_peak, h_peak = max(((t, h[2]) for t, h in hist), key=lambda x: x[1])
+	return {"c": c, "q0": q0, "decay_rig": decay_rig, "t_peak": t_peak, "h_peak": h_peak,
+			"t_peak_real": t_peak * c.m, "T_peak": 10 + h_peak * c.deg_per_cm()}
+
+
+# Тепло твердения: адиабатический подъём температуры и постоянная затухания тепловыделения.
+# Типичные порядки для массивного бетона; для своей смеси берите данные производителя.
+HYDRATION_RISE_C = 40.0
+HYDRATION_T_DAYS = 3.0
+
+
+CRACK_DT_C = 20.0
+
+
+def hydration_threshold_m() -> float:
+	"""Наибольшая толщина, при которой перепад ядро–поверхность не превышает CRACK_DT_C (бисекция по модели)."""
+	lo, hi = 0.3, 4.0
+	for _ in range(20):
+		mid = (lo + hi) / 2
+		if hydration_run(mid)["T_peak"] - 10 > CRACK_DT_C:
+			hi = mid
+		else:
+			lo = mid
+	return lo
+
+
+def hydration_case() -> list:
+	ml_min = lambda q: q * 60 * AREA
+	run = hydration_run(1.2)
+	c = run["c"]
+	cm = L("см", "cm")
+	q_ml = ml_min(run["q0"])
+	decay_min = run["decay_rig"] / 60
+	dpm = q_ml * 20
+	dt_peak = run["T_peak"] - 10
+	limit = hydration_threshold_m()
+	sched = "; ".join(
+		L(f"{f(k * decay_min, 0)} мин — {f(dpm * math.exp(-k), 0)} кап/мин",
+		  f"{f(k * decay_min, 0)} min — {f(dpm * math.exp(-k), 0)} drops/min") for k in range(4))
+	verdict = (L(f"— больше {f(CRACK_DT_C, 0)} °C, есть риск трещин.", f"— above {f(CRACK_DT_C, 0)} °C, a cracking risk.")
+			   if dt_peak > CRACK_DT_C else
+			   L(f"— меньше {f(CRACK_DT_C, 0)} °C: такую плиту можно бетонировать за один раз.",
+				 f"— below {f(CRACK_DT_C, 0)} °C: this slab can be poured in one go."))
+	rows = [[L("Толщина", "Thickness"), L("Максимум в середине", "Peak in the middle"), L("Перепад", "Difference"),
+			 L("Приток на установке", "Inflow on the rig")]]
+	for th in (0.6, 1.0, 1.2, 1.5, 2.0):
+		r = hydration_run(th)
+		dt = r["T_peak"] - 10
+		# Выше порога — жирным.
+		diff = f"{f(dt, 0)} °C"
+		rows.append([f(th, 1) + L(" м", " m"), f"{f(r['T_peak'], 0)} °C " + L("через ", "after ") + fmt_real(r["t_peak_real"]),
+					 f"<b>{diff}</b>" if dt > CRACK_DT_C else diff, f"{f(ml_min(r['q0']))} " + L("мл/мин", "ml/min")])
+	out = case_flow(
+		L("Задача 5. Тепло твердения массивного бетона", "Problem 5. Heat of setting in mass concrete"),
+		L(f"Фундаментная плита 1,2 м уложена бетоном с температурой +10 °C, воздух тоже +10 °C. "
+		  f"Цемент при твердении выделяет тепло: без потерь бетон нагрелся бы на {f(HYDRATION_RISE_C, 0)} °C, "
+		  f"тепловыделение затухает с постоянной ≈ {f(HYDRATION_T_DAYS, 0)} сут. Насколько разогреется середина? "
+		  f"И какую наибольшую толщину можно уложить за один раз, чтобы перепад между ядром и поверхностью "
+		  f"не превысил {f(CRACK_DT_C, 0)} °C (обычный ориентир против трещин)?",
+		  f"A 1.2 m foundation slab is poured with concrete at +10 °C, air also +10 °C. Setting cement releases "
+		  f"heat: with no losses the concrete would warm up by {f(HYDRATION_RISE_C, 0)} °C, and the heat release "
+		  f"decays with a time constant of ≈ {f(HYDRATION_T_DAYS, 0)} days. How hot does the middle get? And what is "
+		  f"the thickest slab that can be poured in one go while the core-to-surface difference stays within "
+		  f"{f(CRACK_DT_C, 0)} °C (the usual anti-cracking guideline)?"),
+		[
+			[L("Слои", "Layers"), L("Δx = 1,2 м / 6", "Δx = 1.2 m / 6"), f"{f(c.dx * 100, 0)} {cm}" + L(" на шприц", " per syringe")],
+			[L("Время", "Time"), f"τ = {f(c.dx, 1)}² / 7·10<super>−7</super> = {f(c.tau_body / 3600)}" + L(" ч", " h"),
+			 f"M ≈ {f(c.m, 0)}: " + L("1 мин", "1 min") + f" ≈ {fmt_real(60 * c.m)}"],
+			[L("Температура", "Temperature"), L("+10…+70 °C на 10 см", "+10…+70 °C over 10 cm"),
+			 f"1 {cm} = {f(c.deg_per_cm(), 0)} °C"],
+			[L("Начало, бак, слив", "Start, tank, drain"), L("Всё +10 °C", "Everything +10 °C"),
+			 L("шприцы, бак и слив 0 см", "syringes, tank and drain 0 cm")],
+			[L("Приток", "Inflow"), L(f"{f(HYDRATION_RISE_C, 0)} °C = {f(c.lvl(10 + HYDRATION_RISE_C), 2)} см за "
+									  f"{f(HYDRATION_T_DAYS, 0)} сут = {f(decay_min, 1)} мин установки",
+									  f"{f(HYDRATION_RISE_C, 0)} °C = {f(c.lvl(10 + HYDRATION_RISE_C), 2)} cm over "
+									  f"{f(HYDRATION_T_DAYS, 0)} days = {f(decay_min, 1)} rig min"),
+			 L(f"{f(q_ml)} мл/мин ({f(dpm, 0)} кап/мин) на шприц, затухание T = {f(decay_min, 1)} мин",
+			   f"{f(q_ml)} ml/min ({f(dpm, 0)} drops/min) per syringe, decay T = {f(decay_min, 1)} min")],
+			[L("Ищем", "Find"), L("Максимум в середине", "Peak in the middle"), L("наибольший уровень шприца №3", "highest level of syringe #3")],
+		],
+		[
+			L(f"Середина (№3) достигает {f(run['h_peak'], 2)} см через {fmt_rig(run['t_peak'])} на установке — это "
+			  f"≈ <b>{f(run['T_peak'], 0)} °C</b> через ≈ <b>{fmt_real(run['t_peak_real'])}</b>. Перепад ядро–поверхность "
+			  f"≈ <b>{f(dt_peak, 0)} °C</b> ",
+			  f"The middle (#3) peaks at {f(run['h_peak'], 2)} cm after {fmt_rig(run['t_peak'])} on the rig — that is "
+			  f"≈ <b>{f(run['T_peak'], 0)} °C</b> after ≈ <b>{fmt_real(run['t_peak_real'])}</b>. Core-to-surface difference "
+			  f"≈ <b>{f(dt_peak, 0)} °C</b> ") + verdict,
+			L(f"<b>В программе:</b> в Inspector узла SyringeRig задайте tank_level_cm = 0, start_level_cm = 0, "
+			  f"inflow_cm_per_min = {f(run['q0'] * 60, 2)} (= {f(q_ml)} мл/мин), inflow_decay_min = {f(decay_min, 1)} и запустите. "
+			  f"<b>На установке:</b> над каждым шприцем капельница из отдельной бутылки; уменьшайте её по графику: {sched}. "
+			  "Вода, ушедшая в бак, поднимает его уровень — отливайте, держите бак на нуле.",
+			  f"<b>In the program:</b> in the Inspector of the SyringeRig node set tank_level_cm = 0, start_level_cm = 0, "
+			  f"inflow_cm_per_min = {f(run['q0'] * 60, 2)} (= {f(q_ml)} ml/min), inflow_decay_min = {f(decay_min, 1)} and run. "
+			  f"<b>On the rig:</b> a drip from a separate bottle above each syringe; reduce it on schedule: {sched}. "
+			  "Water flowing into the tank raises its level — scoop it out to keep the tank at zero."),
+		],
+	)
+	out += [
+		p(L("Перебор толщин", "Trying thicknesses"), h2),
+		p(L("Тот же расчёт для других толщин (у каждой свой масштаб времени, а значит, свой приток и затухание). Выше порога — жирным:",
+			"The same calculation for other thicknesses (each has its own time scale, hence its own inflow and decay). Over the limit — in bold:")),
+		table(rows, [45, 100, 50, 72]),
+		Spacer(1, 2 * mm),
+		p(L(f"Граница — ≈ <b>{f(limit, 1)} м</b>: толще этого плиту нужно бетонировать слоями или охлаждать. "
+			"Именно так интегратор помогал выбирать толщину укладки и режим.",
+			f"The limit is ≈ <b>{f(limit, 1)} m</b>: thicker slabs must be poured in lifts or cooled. "
+			"This is how the integrator helped choose lift thickness and curing regime.")),
+		p(L("Для толстых плит нужен сильный приток — капельница столько не даст. Тогда сильнее закрутите зажимы между "
+			"шприцами (больше t½): установка идёт медленнее, и приток уменьшается во столько же раз.",
+			"Thick slabs need a strong inflow — more than a drip set can give. Then tighten the clamps between the "
+			"syringes (larger t½): the rig runs slower and the inflow drops by the same factor."), small),
+		p(L("Поверхность считается равной температуре воздуха, а свойства бетона — постоянными; с утеплённой "
+			"опалубкой поверхность теплее и перепад меньше. Для настоящего проекта нужны данные о тепловыделении "
+			"конкретного цемента.",
+			"The surface is assumed to be at air temperature and concrete properties constant; with insulated formwork "
+			"the surface is warmer and the difference smaller. A real project needs heat-release data for the specific cement."), small),
+	]
+	return out
 
 
 def footer(canvas, doc) -> None:
@@ -634,7 +765,7 @@ def story() -> list:
 			[L("Пробел", "Space"), L("Пауза", "Pause"), "F1", L("Эта инструкция", "This manual")],
 			["+ / −", L("Скорость времени ×2 / ÷2", "Time speed ×2 / ÷2"), "← / →", L("Страницы инструкции", "Manual pages")],
 			["R", L("Сброс", "Reset"), "O", L("Открыть PDF во внешней программе", "Open the PDF in an external viewer")],
-			["L", L("Язык: русский / English", "Language: English / Russian"), "", ""],
+			["L", L("Язык: русский / English", "Language: English / Russian"), "[ / ]", L("Приток ∓0,5 мл/мин", "Inflow ∓0.5 ml/min")],
 		], [46, 88, 46, 87]),
 		p(L("Мышь (и касания на Steam Deck)", "Mouse (and touch on Steam Deck)"), h2),
 		table([
@@ -643,8 +774,8 @@ def story() -> list:
 			[L("Тянуть конец сливной трубки", "Drag the drain tube end"), L("Меняет уровень слива", "Changes the drain level")],
 			[L("Нажать или тянуть внутри шприца", "Click or drag inside a syringe"), L("Уровень воды встаёт под курсор — так задают начальное состояние", "The water level jumps to the cursor — this is how you set the initial state")],
 			[L("Колесо над баком, сливом или шприцем", "Wheel over tank, drain or syringe"), L("Точная подстройка ±0,1 см", "Fine adjustment ±0.1 cm")],
-			[L("Кнопки сверху", "Top buttons"), L("Пауза/Пуск, − / + скорость, Сброс, Сохранить CSV, Инструкция, язык",
-												 "Pause/Run, − / + speed, Reset, Save CSV, Manual, language")],
+			[L("Кнопки сверху", "Top buttons"), L("Пауза/Пуск, − / + скорость, Сброс, − / + приток, Сохранить CSV, Инструкция, язык",
+												 "Pause/Run, − / + speed, Reset, − / + inflow, Save CSV, Manual, language")],
 		], [95, 172]),
 		p(L("Начальное состояние мышью: нажмите «Пауза», расставьте уровни в шприцах и бак, затем «Пуск». "
 			"Так удобно повторять задачи из разделов 6 и 8.",
@@ -659,6 +790,9 @@ def story() -> list:
 			["tank_level_cm, outlet_level_cm", L("Уровни бака и слива на старте", "Tank and drain levels at start")],
 			["start_level_cm", L("Начальный уровень во всех шприцах", "Initial level in all syringes")],
 			["record_interval_s", L("Как часто писать строку в CSV", "How often to write a CSV row")],
+			["inflow_cm_per_min, inflow_decay_min", L("Приток в каждый шприц (источник тепла) и его затухание; отсчёт от сброса",
+													  "Inflow into each syringe (heat source) and its decay; counted from reset")],
+			["drops_per_ml", L("Капель в 1 мл у капельницы притока (обычно 20)", "Drops per ml of the inflow drip set (usually 20)")],
 		], [95, 172]),
 		p(L("Сравнение с установкой", "Comparing with the rig"), h2),
 		p(L("CSV сохраняется в user://lukyanov_levels.csv (путь показывается на экране): t_s, tank_cm, h1_cm … "
@@ -747,12 +881,10 @@ def story() -> list:
 			"наружной температуры (пример — раздел 6).",
 			"• <b>Freezing of a wall or ground</b> under changing weather — already possible: move the tank following "
 			"the outdoor temperature (example — section 6).")),
-		p(L("• <b>Тепло твердения бетона</b> — собственный источник тепла в каждом слое — пока нет. Для этого в "
-			"каждый шприц нужно медленно и равномерно доливать воду — например, отдельной капельницей. "
-			"Здесь система-капельница пригодилась бы по прямому назначению.",
-			"• <b>Heat of concrete setting</b> — a heat source inside each layer — not yet. That needs slowly and "
-			"evenly adding water to each syringe — for example with a separate drip. "
-			"Here the IV drip set would be used for its original purpose.")),
+		p(L("• <b>Тепло твердения бетона</b> — собственный источник тепла в каждом слое: приток воды в каждый "
+			"шприц отдельной капельницей (задача 5). Здесь система-капельница работает по прямому назначению.",
+			"• <b>Heat of concrete setting</b> — a heat source inside each layer: water dripping into each syringe "
+			"from a separate drip (problem 5). Here the IV drip set is used for its original purpose.")),
 	]
 	return s
 

@@ -82,6 +82,38 @@ func _initialize() -> void:
 	_check(in_range, "уровни не выходят за [0, высота шкалы]")
 	_check(is_equal_approx(rig.vessel_height_cm, rig.syringe_volume_ml / rig._area_cm2()), "высота шкалы = объём / площадь")
 
+	print("Приток (тепло твердения)")
+	# Постоянный приток q, бак и слив на 0 → стационар h_i = q·τ·i·(N+1−i)/2.
+	rig.tank_level_cm = 0.0
+	rig.outlet_level_cm = 0.0
+	rig.inflow_cm_per_min = 1.0
+	rig.inflow_decay_min = 0.0
+	rig.levels.fill(0.0)
+	var tau: float = rig._tau()
+	var dt := tau * 0.05
+	var t := 0.0
+	while t < 40 * tau:
+		rig._step(dt, tau, rig._inflow_cm_per_s(t))
+		t += dt
+	var q := 1.0 / 60.0
+	var src_err := 0.0
+	for i in 5:
+		src_err = maxf(src_err, absf(rig.levels[i] - q * tau * (i + 1) * (5 - i) / 2.0))
+	_check(src_err < 1e-3, "стационар с притоком = q·τ·i·(N+1−i)/2 (ошибка %.6f см)" % src_err)
+	rig.inflow_decay_min = 2.0
+	_check(is_equal_approx(rig._inflow_cm_per_s(120.0) / rig._inflow_cm_per_s(0.0), exp(-1.0)),
+			"затухание притока: q(T) = q0 / e")
+	rig.inflow_cm_per_min = 0.0
+	rig.inflow_decay_min = 0.0
+	for k in 12:
+		rig._press_button("in_more")
+	_check(is_equal_approx(rig.inflow_cm_per_min * rig._area_cm2(), 6.0), "«+ приток» ×12 → 6 мл/мин")
+	for k in 20:
+		rig._press_button("in_less")
+	_check(rig.inflow_cm_per_min == 0.0, "«− приток» не уходит ниже нуля")
+	var drops: float = 6.0 * rig.drops_per_ml
+	_check(is_equal_approx(drops, 120.0), "6 мл/мин = 120 кап/мин при 20 кап/мл")
+
 	print("Мышь")
 	rig._reset()
 	rig.paused = false
