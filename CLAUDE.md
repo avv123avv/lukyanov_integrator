@@ -32,7 +32,10 @@ used to compare simulated water levels against real measurements from timelapse 
 
 ## Model
 - Each vessel = one layer of the heated body; water level = temperature.
-- Update: `dh_i/dt = (h_{i-1} − 2·h_i + h_{i+1}) / τ` (discrete heat equation).
+- Update: `dh_i/dt = (h_{i-1} − 2·h_i + h_{i+1}) / τ + q(t)` (discrete heat equation with an internal source).
+- `q(t)` = `inflow_cm_per_min` / 60 · exp(−t / `inflow_decay_min`·60), t from reset (0 decay = constant): water
+  dripped into every vessel = heat of concrete setting. `syringe_rig` shows it in ml/min and drops/min (`drops_per_ml`).
+  With q > 0 and both boundaries at 0 the steady state is `h_i = q·τ·i·(N+1−i)/2` — the source-term sanity check.
 - Boundaries: left = `tank_level_cm` (movable tank), right = `outlet_level_cm` (constant-level drain).
 - `τ = 2 · pair_half_time_s / ln 2`; `pair_half_time_s` comes from calibrating the real rig
   (time for the level difference between two neighbouring vessels to halve).
@@ -44,7 +47,7 @@ used to compare simulated water levels against real measurements from timelapse 
 - This CSV format is what real measurements are compared against — don't change columns without reason.
 
 ## Controls
-↑/↓ tank ±1 cm · Space pause · +/− sim speed ×2 · R reset · S save CSV · L language.
+↑/↓ tank ±1 cm · Space pause · +/− sim speed ×2 · [ / ] inflow · R reset · S save CSV · L language.
 F1 manual overlay (←/→, PgUp/PgDn, wheel or click to flip, Home first page, O open PDF externally, Esc/F1 close).
 Mouse (`syringe_rig`): drag the tank bottle, the drain tube end, or inside a syringe (sets its level);
 wheel = ±0.1 cm on those; top buttons for pause/speed/reset/CSV/manual. Positions come from

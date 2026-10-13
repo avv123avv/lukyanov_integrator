@@ -10,6 +10,7 @@ extends Node2D
 ##   R       — сброс
 ##   S       — сохранить замеры в CSV
 ##   L       — язык интерфейса (ru / en)
+##   [ / ]   — приток в каждый сосуд меньше / больше (источник тепла)
 
 @export var vessel_count: int = 5
 @export var vessel_height_cm: float = 25.0
@@ -21,6 +22,14 @@ extends Node2D
 @export var start_level_cm: float = 0.0
 @export var sim_speed: float = 1.0
 @export var record_interval_s: float = 5.0
+## Приток воды в каждый сосуд, см уровня в минуту — внутренний источник тепла
+## (например, тепло твердения бетона). 0 — притока нет.
+@export var inflow_cm_per_min: float = 0.0
+## Затухание притока: q(t) = q0 · exp(−t / T), t — от сброса (момент укладки бетона).
+## 0 — приток постоянный.
+@export var inflow_decay_min: float = 0.0
+
+const INFLOW_STEP_CM_PER_MIN := 0.1
 
 const PX_PER_CM := 14.0
 const VESSEL_W := 44.0
@@ -73,7 +82,7 @@ func _process(delta: float) -> void:
 	var steps := maxi(1, int(ceil(t / (tau * 0.2))))
 	var dt := t / steps
 	for s in steps:
-		_step(dt, tau)
+		_step(dt, tau, _inflow_cm_per_s(sim_time + s * dt))
 	sim_time += t
 	_record_timer += t
 	while _record_timer >= record_interval_s:
@@ -82,14 +91,23 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-## dh_i/dt = (h_{i-1} − 2·h_i + h_{i+1}) / τ — то же уравнение, что и для тепла.
-func _step(dt: float, tau: float) -> void:
+## Текущий приток в один сосуд, см/с.
+func _inflow_cm_per_s(t: float) -> float:
+	var q := inflow_cm_per_min / 60.0
+	if inflow_decay_min > 0.0:
+		q *= exp(-t / (inflow_decay_min * 60.0))
+	return q
+
+
+## dh_i/dt = (h_{i-1} − 2·h_i + h_{i+1}) / τ + q — то же уравнение, что и для тепла
+## с внутренним источником q.
+func _step(dt: float, tau: float, q: float = 0.0) -> void:
 	var n := levels.size()
 	var next := levels.duplicate()
 	for i in n:
 		var left: float = tank_level_cm if i == 0 else levels[i - 1]
 		var right: float = outlet_level_cm if i == n - 1 else levels[i + 1]
-		var h: float = levels[i] + dt / tau * (left - 2.0 * levels[i] + right)
+		var h: float = levels[i] + dt / tau * (left - 2.0 * levels[i] + right) + dt * q
 		next[i] = clampf(h, 0.0, vessel_height_cm)
 	levels = next
 
@@ -115,6 +133,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_save_csv()
 		KEY_L:
 			I18n.toggle()
+		KEY_BRACKETLEFT:
+			inflow_cm_per_min = maxf(snappedf(inflow_cm_per_min - INFLOW_STEP_CM_PER_MIN, 0.01), 0.0)
+		KEY_BRACKETRIGHT:
+			inflow_cm_per_min = snappedf(inflow_cm_per_min + INFLOW_STEP_CM_PER_MIN, 0.01)
 	queue_redraw()
 
 
@@ -208,8 +230,8 @@ func _draw() -> void:
 	# Информация
 	var info := PackedStringArray([
 		I18n.t("t = %.0f с   скорость x%s%s") % [sim_time, str(sim_speed), I18n.t("   [пауза]") if paused else ""],
-		I18n.t("Бак: %.0f см   слив: %.0f см   τ = %.1f с") % [tank_level_cm, outlet_level_cm, _tau()],
-		I18n.t("↑↓ бак   Пробел пауза   +/− скорость   R сброс   S сохранить CSV   L язык"),
+		I18n.t("Бак: %.0f см   слив: %.0f см   τ = %.1f с   приток: %.2f см/мин") % [tank_level_cm, outlet_level_cm, _tau(), _inflow_cm_per_s(sim_time) * 60.0],
+		I18n.t("↑↓ бак   Пробел пауза   +/− скорость   [ ] приток   R сброс   S CSV   L язык"),
 	])
 	for i in info.size():
 		draw_string(font, Vector2(16, 28 + i * 22), info[i], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, COLOR_TEXT)
