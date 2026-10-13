@@ -42,8 +42,9 @@ const FS_SMALL := 20
 const FS := 24
 const FS_BIG := 30
 
-const HELP_PDF := "res://docs/instruction.pdf"
-const HELP_PAGE := "res://docs/pages/page_%d.png"
+# Инструкция на языке интерфейса: instruction_ru.pdf / instruction_en.pdf, страницы — pages/<lang>/.
+const HELP_PDF := "res://docs/instruction_%s.pdf"
+const HELP_PAGE := "res://docs/pages/%s/page_%d.png"
 
 const COLOR_BTN := Color(0.24, 0.26, 0.3)
 const COLOR_BTN_HOVER := Color(0.34, 0.37, 0.43)
@@ -54,6 +55,7 @@ const CSV_PATH := "user://lukyanov_levels.csv"
 var _help_open := false
 var _help_page := 0
 var _help_pages: Array[Texture2D] = []
+var _help_lang := ""
 
 ## Цель мыши: "" — ничего, "tank", "outlet", "s0".."s4" — шприц, "btn:<id>" — кнопка.
 var _hover := ""
@@ -146,7 +148,7 @@ func _draw() -> void:
 	_draw_clamp(clamp_x, LINE_Y)
 	_draw_stand(out_cx + 28 * U, oy - 14 * U, end_x)
 	_draw_cup(end_x, LINE_Y + 30 * U)
-	draw_string(font, Vector2(end_x - 100, LINE_Y + 150), "слив %.1f см" % outlet_level_cm, HORIZONTAL_ALIGNMENT_CENTER, 200, FS, COLOR_TEXT)
+	draw_string(font, Vector2(end_x - 100, LINE_Y + 150), I18n.t("слив %.1f см") % outlet_level_cm, HORIZONTAL_ALIGNMENT_CENTER, 200, FS, COLOR_TEXT)
 
 	# Шприцы и краники
 	var area := _area_cm2()
@@ -156,9 +158,9 @@ func _draw() -> void:
 		_draw_syringe(cx, sw, levels[i], font)
 		_draw_stopcock(cx, LINE_Y)
 		var lx := cx - slot * 0.5
-		draw_string(font, Vector2(lx, LINE_Y + 60), "№%d" % (i + 1), HORIZONTAL_ALIGNMENT_CENTER, slot, FS, COLOR_DIM)
-		draw_string(font, Vector2(lx, LINE_Y + 96), "%.1f см" % levels[i], HORIZONTAL_ALIGNMENT_CENTER, slot, FS_BIG, COLOR_TEXT)
-		draw_string(font, Vector2(lx, LINE_Y + 128), "%.0f мл" % (levels[i] * area), HORIZONTAL_ALIGNMENT_CENTER, slot, FS, COLOR_DIM)
+		draw_string(font, Vector2(lx, LINE_Y + 60), I18n.t("№%d") % (i + 1), HORIZONTAL_ALIGNMENT_CENTER, slot, FS, COLOR_DIM)
+		draw_string(font, Vector2(lx, LINE_Y + 96), I18n.t("%.1f см") % levels[i], HORIZONTAL_ALIGNMENT_CENTER, slot, FS_BIG, COLOR_TEXT)
+		draw_string(font, Vector2(lx, LINE_Y + 128), I18n.t("%.0f мл") % (levels[i] * area), HORIZONTAL_ALIGNMENT_CENTER, slot, FS, COLOR_DIM)
 
 	# Профиль «температуры»
 	var pts: Array[Vector2] = [Vector2(tank_cx, _sy(tank_level_cm))]
@@ -178,7 +180,7 @@ func _draw() -> void:
 	_draw_tag(tank_cx - 64 * U, STAND_TOP + 40, "7", font)
 
 	# Информация
-	var status := "t = %.0f с    скорость ×%s%s" % [sim_time, str(sim_speed), "    [ПАУЗА]" if paused else ""]
+	var status := I18n.t("t = %.0f с    скорость ×%s%s") % [sim_time, str(sim_speed), I18n.t("    [ПАУЗА]") if paused else ""]
 	draw_string(font, Vector2(24, 44), status, HORIZONTAL_ALIGNMENT_LEFT, -1, FS_BIG, COLOR_TEXT)
 	_draw_buttons(font)
 	if Time.get_ticks_msec() < _toast_until:
@@ -221,7 +223,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_help_page = 0
 			KEY_O:
 				if not key.echo:
-					OS.shell_open(ProjectSettings.globalize_path(HELP_PDF))
+					OS.shell_open(ProjectSettings.globalize_path(HELP_PDF % I18n.current()))
 	elif mouse != null and mouse.pressed:
 		match mouse.button_index:
 			MOUSE_BUTTON_WHEEL_DOWN:
@@ -245,11 +247,15 @@ func _set_help(open: bool) -> void:
 
 
 func _load_help() -> void:
-	if not _help_pages.is_empty():
+	var lang := I18n.current()
+	if _help_lang == lang:
 		return
+	_help_lang = lang
+	_help_pages.clear()
+	_help_page = 0
 	var i := 1
-	while ResourceLoader.exists(HELP_PAGE % i):
-		_help_pages.append(load(HELP_PAGE % i) as Texture2D)
+	while ResourceLoader.exists(HELP_PAGE % [lang, i]):
+		_help_pages.append(load(HELP_PAGE % [lang, i]) as Texture2D)
 		i += 1
 
 
@@ -261,7 +267,7 @@ func _draw_help(font: Font) -> void:
 	var view := get_viewport_rect().size
 	draw_rect(Rect2(Vector2.ZERO, view), Color(0.05, 0.05, 0.06, 0.92))
 	if _help_pages.is_empty():
-		draw_string(font, Vector2(0, view.y * 0.5), "Нет страниц инструкции — запустите docs/build_instruction.py",
+		draw_string(font, Vector2(0, view.y * 0.5), I18n.t("Нет страниц инструкции — запустите docs/build_instruction.py"),
 				HORIZONTAL_ALIGNMENT_CENTER, view.x, 18, COLOR_TEXT)
 		return
 	var tex := _help_pages[_help_page]
@@ -270,7 +276,7 @@ func _draw_help(font: Font) -> void:
 	var k := minf(1.0, minf(avail.x / size.x, avail.y / size.y))
 	var draw_size := size * k
 	draw_texture_rect(tex, Rect2(Vector2((view.x - draw_size.x) * 0.5, 0.0), draw_size), false)
-	var hint := "стр. %d / %d     ← → листать     O открыть PDF     F1 / Esc закрыть" % [_help_page + 1, _help_pages.size()]
+	var hint := I18n.t("стр. %d / %d     ← → листать     O открыть PDF     F1 / Esc закрыть") % [_help_page + 1, _help_pages.size()]
 	draw_string(font, Vector2(0, view.y - 3), hint, HORIZONTAL_ALIGNMENT_CENTER, view.x, FS_SMALL, COLOR_DIM)
 
 
@@ -394,12 +400,14 @@ func _draw_mouse_target() -> void:
 func _buttons() -> Array[Dictionary]:
 	var font := ThemeDB.fallback_font
 	var defs := [
-		["pause", "Пуск" if paused else "Пауза"],
-		["slower", "− скорость"],
-		["faster", "+ скорость"],
-		["reset", "Сброс"],
-		["csv", "Сохранить CSV"],
-		["help", "Инструкция"],
+		["pause", I18n.t("Пуск") if paused else I18n.t("Пауза")],
+		["slower", I18n.t("− скорость")],
+		["faster", I18n.t("+ скорость")],
+		["reset", I18n.t("Сброс")],
+		["csv", I18n.t("Сохранить CSV")],
+		["help", I18n.t("Инструкция")],
+		# Кнопка показывает язык, на который переключит.
+		["lang", "English" if I18n.current() == "ru" else "Русский"],
 	]
 	var out: Array[Dictionary] = []
 	var x := 24.0
@@ -434,13 +442,15 @@ func _press_button(id: String) -> void:
 			_save_csv_with_toast()
 		"help":
 			_set_help(true)
+		"lang":
+			I18n.toggle()
 
 
 func _save_csv_with_toast() -> void:
 	if _save_csv():
-		_show_toast("CSV сохранён: " + ProjectSettings.globalize_path(CSV_PATH))
+		_show_toast(I18n.t("CSV сохранён: ") + ProjectSettings.globalize_path(CSV_PATH))
 	else:
-		_show_toast("Не удалось сохранить CSV — подробности в консоли")
+		_show_toast(I18n.t("Не удалось сохранить CSV — подробности в консоли"))
 
 
 func _show_toast(text: String) -> void:
@@ -519,7 +529,7 @@ func _draw_tank(cx: float, surface: float, font: Font) -> Vector2:
 	# Пробка и шип капельницы
 	draw_rect(Rect2(cx - 10 * U, neck, 20 * U, 6 * U), COLOR_DIM)
 	draw_line(Vector2(cx, neck + 6 * U), Vector2(cx, spike), COLOR_PLASTIC, 4.0 * U)
-	draw_string(font, Vector2(x - 24, top - 14), "бак %.1f см" % tank_level_cm, HORIZONTAL_ALIGNMENT_LEFT, -1, FS, COLOR_TEXT)
+	draw_string(font, Vector2(x - 24, top - 14), I18n.t("бак %.1f см") % tank_level_cm, HORIZONTAL_ALIGNMENT_LEFT, -1, FS, COLOR_TEXT)
 	return Vector2(cx, spike)
 
 
@@ -573,36 +583,36 @@ func _draw_lines(font: Font, x: float, y: float, lines: PackedStringArray, step:
 ## Подробные сборка и калибровка — в инструкции (F1), здесь только подсказка.
 func _draw_footer(font: Font) -> void:
 	var lines := PackedStringArray([
-		"Мышь: тяните бак, конец слива и уровни в шприцах; колесо — ±0,1 см. Пауза → расставьте уровни → Пуск.",
-		"Клавиши: ↑↓ бак, Пробел, +/−, R, S, F1.   Уровни — от нуля шкал; 1 см = %.1f мл." % _area_cm2(),
+		I18n.t("Мышь: тяните бак, конец слива и уровни в шприцах; колесо — ±0,1 см. Пауза → расставьте уровни → Пуск."),
+		I18n.t("Клавиши: ↑↓ бак, Пробел, +/−, R, S, L язык, F1.   Уровни — от нуля шкал; 1 см = %.1f мл.") % _area_cm2(),
 	])
 	_draw_lines(font, 24, 935, lines, 38)
-	draw_string(font, Vector2(24, 1040), "F1 — инструкция: сборка, калибровка, расчёты", HORIZONTAL_ALIGNMENT_LEFT, -1, FS_BIG, COLOR_HEAD)
+	draw_string(font, Vector2(24, 1040), I18n.t("F1 — инструкция: сборка, калибровка, расчёты"), HORIZONTAL_ALIGNMENT_LEFT, -1, FS_BIG, COLOR_HEAD)
 
 
 func _draw_panel(font: Font) -> void:
 	var n := vessel_count
 	draw_line(Vector2(PANEL_X - 20, 14), Vector2(PANEL_X - 20, 1066), COLOR_DIM, 1.5)
 	var lines := PackedStringArray([
-		"#Детали (N = %d)" % n,
-		"1  Бутылка 0,5–1 л — 1",
-		"2  Шприц %.0f мл — %d" % [syringe_volume_ml, n],
-		"3  Краник 3-ходовой — %d" % n,
-		"4  Капельница — %d" % (n + 1),
-		"5    её роликовый зажим",
-		"6  Стакан — 1",
-		"7  Штатив — 2",
+		I18n.t("#Детали (N = %d)") % n,
+		I18n.t("1  Бутылка 0,5–1 л — 1"),
+		I18n.t("2  Шприц %.0f мл — %d") % [syringe_volume_ml, n],
+		I18n.t("3  Краник 3-ходовой — %d") % n,
+		I18n.t("4  Капельница — %d") % (n + 1),
+		I18n.t("5    её роликовый зажим"),
+		I18n.t("6  Стакан — 1"),
+		I18n.t("7  Штатив — 2"),
 		"",
-		"#Режим",
-		"Бак: %.1f см" % tank_level_cm,
-		"Слив: %.1f см" % outlet_level_cm,
-		"t½ пары: %.0f с" % pair_half_time_s,
-		"τ = %.1f с" % _tau(),
+		I18n.t("#Режим"),
+		I18n.t("Бак: %.1f см") % tank_level_cm,
+		I18n.t("Слив: %.1f см") % outlet_level_cm,
+		I18n.t("t½ пары: %.0f с") % pair_half_time_s,
+		I18n.t("τ = %.1f с") % _tau(),
 		"",
-		"#Шприц",
-		"Ø %.1f мм, шкала %.1f см" % [syringe_inner_d_mm, vessel_height_cm],
-		"Открытая трубка:",
-		"  t½ ≈ %.1f с" % _open_line_half_time_s(),
-		"Зажимом → %.0f с" % pair_half_time_s,
+		I18n.t("#Шприц"),
+		I18n.t("Ø %.1f мм, шкала %.1f см") % [syringe_inner_d_mm, vessel_height_cm],
+		I18n.t("Открытая трубка:"),
+		I18n.t("  t½ ≈ %.1f с") % _open_line_half_time_s(),
+		I18n.t("Зажимом → %.0f с") % pair_half_time_s,
 	])
 	_draw_lines(font, PANEL_X, 50, lines, 38)

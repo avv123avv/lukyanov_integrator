@@ -9,6 +9,7 @@ extends Node2D
 ##   + / −   — ускорить / замедлить время (x2)
 ##   R       — сброс
 ##   S       — сохранить замеры в CSV
+##   L       — язык интерфейса (ru / en)
 
 @export var vessel_count: int = 5
 @export var vessel_height_cm: float = 25.0
@@ -112,6 +113,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_reset()
 		KEY_S:
 			_save_csv()
+		KEY_L:
+			I18n.toggle()
 	queue_redraw()
 
 
@@ -168,7 +171,7 @@ func _draw() -> void:
 	var tank_cx := tank_x + VESSEL_W * 0.5
 	if tank_bottom < tube_y:
 		draw_line(Vector2(tank_cx, tank_bottom), Vector2(tank_cx, tube_y), COLOR_WATER, 5.0)
-	draw_string(font, Vector2(tank_x - 6, tank_surface - 28), "Бак", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, COLOR_TEXT)
+	draw_string(font, Vector2(tank_x - 6, tank_surface - 28), I18n.t("Бак"), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, COLOR_TEXT)
 
 	# Трубки с кранами
 	var x_prev := tank_cx
@@ -192,7 +195,7 @@ func _draw() -> void:
 	# Слив с постоянным уровнем
 	var oy := _y(outlet_level_cm)
 	draw_line(Vector2(outlet_x - 4, oy), Vector2(outlet_x + 30, oy), COLOR_GLASS, 2.0)
-	draw_string(font, Vector2(outlet_x - 4, oy - 8), "Слив", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, COLOR_TEXT)
+	draw_string(font, Vector2(outlet_x - 4, oy - 8), I18n.t("Слив"), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, COLOR_TEXT)
 
 	# Профиль «температуры»
 	var pts: Array[Vector2] = [Vector2(tank_cx, tank_surface)]
@@ -204,9 +207,9 @@ func _draw() -> void:
 
 	# Информация
 	var info := PackedStringArray([
-		"t = %.0f с   скорость x%s%s" % [sim_time, str(sim_speed), "   [пауза]" if paused else ""],
-		"Бак: %.0f см   слив: %.0f см   τ = %.1f с" % [tank_level_cm, outlet_level_cm, _tau()],
-		"↑↓ бак   Пробел пауза   +/− скорость   R сброс   S сохранить CSV",
+		I18n.t("t = %.0f с   скорость x%s%s") % [sim_time, str(sim_speed), I18n.t("   [пауза]") if paused else ""],
+		I18n.t("Бак: %.0f см   слив: %.0f см   τ = %.1f с") % [tank_level_cm, outlet_level_cm, _tau()],
+		I18n.t("↑↓ бак   Пробел пауза   +/− скорость   R сброс   S сохранить CSV   L язык"),
 	])
 	for i in info.size():
 		draw_string(font, Vector2(16, 28 + i * 22), info[i], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, COLOR_TEXT)
