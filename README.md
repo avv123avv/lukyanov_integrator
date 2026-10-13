@@ -11,6 +11,9 @@ temperature; the program is a digital twin you can compare against timelapse foo
 
 ![The program (English UI)](docs/scheme_en.png)
 
+**Download (Windows):** the latest build is on the [Releases](https://github.com/avv123avv/lukyanov_integrator/releases/latest)
+page — unpack the zip and run `LukyanovIntegrator.exe`. Every merge into `main` publishes a new version automatically.
+
 **Run:** Godot 4.7 → Import → select `project.godot` → F5. The screen is 1920×1080 and scales down
 to smaller displays (e.g. Steam Deck). The UI language follows the system on first launch;
 switch with the **English / Русский** button or the **L** key.
@@ -60,6 +63,9 @@ The original abstract scheme (no syringes) is the `main.tscn` scene.
 двойник установки для сравнения с таймлапсом.
 
 ![Программа (русский интерфейс)](docs/scheme_ru.png)
+
+**Скачать (Windows):** последняя сборка — на странице [Releases](https://github.com/avv123avv/lukyanov_integrator/releases/latest):
+распакуйте zip и запустите `LukyanovIntegrator.exe`. Каждое слияние в `main` автоматически выпускает новую версию.
 
 **Запуск:** Godot → Import → выбрать `project.godot` → F5. Экран 1920×1080 (масштабируется под меньшие).
 Язык интерфейса при первом запуске — как в системе; переключение — кнопкой **English / Русский** или клавишей **L**.
