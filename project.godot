@@ -11,6 +11,7 @@ config_version=5
 [application]
 
 config/name="Lukyanov Hydraulic Integrator"
+config/version="dev"
 config/description="Симуляция гидравлического интегратора Лукьянова"
 run/main_scene="res://syringe_rig.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")

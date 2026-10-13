@@ -50,6 +50,40 @@ Mouse (`syringe_rig`): drag the tank bottle, the drain tube end, or inside a syr
 wheel = ±0.1 cm on those; top buttons for pause/speed/reset/CSV/manual. Positions come from
 `make_input_local(event)`, so tests can feed synthetic `InputEventMouse*` straight into `_unhandled_input`.
 
+## Tests
+- `tests/run_tests.gd` — headless suite (physics, mouse, language/manual pages, CSV format):
+  `godot --headless --path . --import` then `godot --headless --path . -s tests/run_tests.gd` (exit 0 = pass).
+  Add a check there for every new feature; keep it render-free (no screenshots) so it runs in CI.
+- Git ignores `*.import`; after switching branches delete stale `docs/pages/*/*.png.import` without a PNG,
+  otherwise Godot still "sees" removed manual pages.
+
+## CI and releases (GitHub Actions)
+- `.github/workflows/ci.yml` — on every PR and push to `main`: Godot 4.7.1 (Linux) + Windows export templates
+  (`.github/actions/setup-godot`, cached), then `.github/scripts/test_and_build.sh`: import → tests →
+  `--export-release "Windows Desktop"`. The test `.exe` is attached to the run as an artifact (7 days).
+- `.github/workflows/release.yml` — when a PR is **merged into `main`** (the default branch; there is no `master`):
+  bumps the version from the latest `vX.Y.Z` tag, writes it into `application/config/version`, re-runs
+  tests + export, zips `LukyanovIntegrator.exe` + both PDFs + README, creates tag `vX.Y.Z` and a GitHub Release.
+  First release (no tags) is `v0.1.0`.
+- Export preset: `export_presets.cfg` → "Windows Desktop", single exe (`embed_pck`), `modify_resources=false`
+  (no rcedit/wine needed on Linux). The game shows the version top-right ("dev" in the repo).
+  In the exported build the O key opens the PDF next to the `.exe` (`_help_pdf_path()`).
+
+### Release rules for Claude
+- Never create tags or releases by hand and never edit `config/version` in `project.godot` — it stays `"dev"`;
+  the release workflow owns both.
+- Work on a branch and open a PR into `main`; every merge publishes a release, so pick the bump with a PR label
+  when creating the PR (`gh pr create --label …`):
+  - `release:major` — incompatible change: CSV columns, scene/parameter renames, rig redesign;
+  - `release:minor` — new feature (new control, model term, manual section/problem);
+  - no label — patch: fixes, text/translation edits, CI tweaks;
+  - `release:none` — merge without a release (docs-only or repo housekeeping).
+  Say in the PR description which bump was chosen and why.
+- Before opening a PR run the tests locally; if the manual text or rig defaults changed, rerun
+  `docs/build_instruction.py` and commit the PDFs and pages too (CI does not regenerate them — it needs Windows fonts).
+- After merging, the release appears at https://github.com/avv123avv/lukyanov_integrator/releases;
+  if the Release workflow fails, fix it on a new branch/PR — do not re-tag by hand.
+
 ## Conventions
 - Keep the physics (`_step`, `_tau`) independent from rendering so it can be moved to a separate
   class or tested headless later.

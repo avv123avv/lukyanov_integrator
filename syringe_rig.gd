@@ -182,6 +182,10 @@ func _draw() -> void:
 	# Информация
 	var status := I18n.t("t = %.0f с    скорость ×%s%s") % [sim_time, str(sim_speed), I18n.t("    [ПАУЗА]") if paused else ""]
 	draw_string(font, Vector2(24, 44), status, HORIZONTAL_ALIGNMENT_LEFT, -1, FS_BIG, COLOR_TEXT)
+	# Версия: в репозитории "dev", в релизе её проставляет CI (application/config/version).
+	var version := str(ProjectSettings.get_setting("application/config/version", "dev"))
+	draw_string(font, Vector2(RIG_RIGHT - 300, 40), version if version == "dev" else "v" + version,
+			HORIZONTAL_ALIGNMENT_RIGHT, 300, FS_SMALL, COLOR_DIM)
 	_draw_buttons(font)
 	if Time.get_ticks_msec() < _toast_until:
 		draw_string(font, Vector2(24, 140), _toast, HORIZONTAL_ALIGNMENT_LEFT, RIG_RIGHT - 24, FS_SMALL, COLOR_HEAD)
@@ -223,7 +227,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_help_page = 0
 			KEY_O:
 				if not key.echo:
-					OS.shell_open(ProjectSettings.globalize_path(HELP_PDF % I18n.current()))
+					OS.shell_open(_help_pdf_path())
 	elif mouse != null and mouse.pressed:
 		match mouse.button_index:
 			MOUSE_BUTTON_WHEEL_DOWN:
@@ -236,6 +240,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	get_viewport().set_input_as_handled()
 	queue_redraw()
+
+
+## В собранной игре PDF лежат рядом с .exe (их кладёт туда CI), в проекте — в docs/.
+func _help_pdf_path() -> String:
+	if OS.has_feature("template"):
+		var name := (HELP_PDF % I18n.current()).get_file()
+		return OS.get_executable_path().get_base_dir().path_join(name)
+	return ProjectSettings.globalize_path(HELP_PDF % I18n.current())
 
 
 func _set_help(open: bool) -> void:
